@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:15-3.3-alpine
+    container_name: postgis_andalucia
+    restart: always
+    environment:
+      POSTGRES_DB: nyc
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: streamlit_andalucia
+    ports:
+      - "8501:8501"
+    depends_on:
+      - db
+    environment:
+      # La aplicación Python debe conectarse al servicio 'db', no a 'localhost'
+      DB_HOST: db
+volumes:
+  postgis_data:
