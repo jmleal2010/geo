@@ -1,8 +1,23 @@
-streamlit
-geopandas
-sqlalchemy
-psycopg2-binary
-pandas
-folium
-streamlit-folium
-geoalchemy2
+# ============================================================================
+# Core Dependencies
+# ============================================================================
+
+# Web Framework
+streamlit==1.29.0
+streamlit-folium==0.17.4
+
+# Geospatial Libraries
+geopandas==0.14.1
+folium==0.15.1
+shapely==2.0.2
+pyproj==3.6.1
+fiona==1.9.5
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+GeoAlchemy2==0.14.3
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
