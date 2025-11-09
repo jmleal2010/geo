@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-       - "${DB_PORT:-5433}:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - postgis_data:/var/lib/postgresql/data
 
@@ -18,15 +18,14 @@ services:
     build: .
     container_name: streamlit_andalucia
     ports:
-      - "8501:8501"
+     - "${STREAMLIT_PORT:-8501}:8501"
     depends_on:
       - db
     environment:
-      # Configuración de la base de datos
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_PORT: 5432
       DB_HOST: db
+      DB_PORT: 5432
 volumes:
   postgis_data:

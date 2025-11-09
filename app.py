@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 DB_CONFIG = {
     'name': os.getenv('POSTGRES_DB', 'nyc'),
     'user': os.getenv('POSTGRES_USER', 'postgres'),
-    'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+    'password': os.getenv('POSTGRES_PASSWORD', 'Pececitos1$'),
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': os.getenv('DB_PORT', '5432')
 }
@@ -220,8 +220,8 @@ def visualizar_mapa(gdf):
         return
 
     # Usamos el centro y zoom definidos en las constantes.
-    centroid = gdf.union_all().centroid
-    m = folium.Map(location=[centroid.y, centroid.x], zoom_start=7)
+    centroid = gdf.unary_union.centroid
+    m = folium.Map(location=[centroid.y, centroid.x], zoom_start=6)
 
     # 2. Mapeo de colores específico
     color_map = {
@@ -321,6 +321,7 @@ def mostrar_contenido_principal() -> None:
         st.session_state.current_filter = 'Todos'
 
     gdf_mostrar = st.session_state.data_to_display
+    print(gdf_mostrar);
 
     if not gdf_mostrar.empty:
         # Mostrar métricas

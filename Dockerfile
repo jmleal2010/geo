@@ -27,4 +27,4 @@ COPY app.py .
 EXPOSE 8501
 
 # Comando para correr la aplicación Streamlit
-CMD ["streamlit", "run", "app.py"]
+CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.headless", "true"]
