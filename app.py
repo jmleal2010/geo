@@ -17,6 +17,8 @@ from sqlalchemy import create_engine, Engine
 from sqlalchemy.exc import SQLAlchemyError
 from streamlit_folium import folium_static
 from folium.plugins import MousePosition
+import requests
+from io import BytesIO
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -36,11 +38,11 @@ DB_CONFIG = {
 }
 
 # Constantes de la aplicación
-TABLA_POSTGIS = 'andalucia_usos_suelo'
+POSTGIS_TABLE = 'andalucia_usos_suelo'
 DATA_FILE = "./data/gis_osm_landuse_a_free_1.shp"
-ZONAS_VERDES = ['Bosques', 'Reservas naturales']
-SRID_PROYECTO = 25830  # ETRS89 / UTM zone 30N
-SRID_MAPA = 4326  # WGS 84
+GREEN_ZONES = ['Bosques', 'Reservas naturales']
+PROJECT_SRID = 25830  # ETRS89 / UTM zone 30N
+SRID_MAP = 4326  # WGS 84
 HECTARES_PER_SQM = 10000
 
 # Configuración de visualización
@@ -80,67 +82,64 @@ def get_db_connection() -> Engine:
 # ============================================================================
 
 @st.cache_data(show_spinner=False)
-def cargar_y_preparar_datos() -> Optional[gpd.GeoDataFrame]:
+def loadData() -> Optional[gpd.GeoDataFrame]:
     try:
         with st.spinner('Cargando y preparando datos...'):
             # Leer archivo shapefile
-            gdf = gpd.read_file(DATA_FILE)
+            # gdf = gpd.read_file(DATA_FILE)
+            response = requests.get('https://www.uhu.es/jluis.dominguez/AGI/andalucia-landuse.shp.zip', verify=False)
+
+            response.raise_for_status()
+            zip_file = BytesIO(response.content)
+
+            gdf = gpd.read_file(zip_file)
 
             if gdf.empty:
                 st.warning("El archivo de datos está vacío.")
                 return None
 
-            gdf_procesado = (
+            processed_gdf = (
                 gdf[['fclass', 'name', 'geometry']]
-                .to_crs(SRID_PROYECTO)
+                .to_crs(PROJECT_SRID)
             )
 
             # Calcular superficie en hectáreas
-            gdf_procesado['superficie_ha'] = (
-                    gdf_procesado.geometry.area / HECTARES_PER_SQM
+            processed_gdf['superficie_ha'] = (
+                    processed_gdf.geometry.area / HECTARES_PER_SQM
             ).round(1)
 
-            columnas_finales = ['fclass', 'name', 'superficie_ha', 'geometry']
-            gdf_procesado = gdf_procesado[columnas_finales]
+            final_columns = ['fclass', 'name', 'superficie_ha', 'geometry']
+            processed_gdf = processed_gdf[final_columns]
 
-            logger.info(f"Datos preparados. CRS: {gdf_procesado.crs}, "
-                        f"Registros: {len(gdf_procesado)}")
-            st.success(f"✅ Datos preparados: {len(gdf_procesado)} registros")
+            logger.info(f"Datos preparados. CRS: {processed_gdf.crs}, "
+                        f"Registros: {len(processed_gdf)}")
+            st.success(f"✅ Datos preparados: {len(processed_gdf)} registros")
 
-            return gdf_procesado
+            return processed_gdf
 
     except FileNotFoundError:
         st.error(f"❌ No se encontró el archivo: {DATA_FILE}")
         logger.error(f"Archivo no encontrado: {DATA_FILE}")
     except Exception as e:
         st.error(f"❌ Error al procesar datos: {str(e)}")
-        logger.exception("Error en cargar_y_preparar_datos")
+        logger.exception("Error en carga y preparación de datos")
 
     return None
 
 
-def cargar_a_postgis(gdf: gpd.GeoDataFrame) -> bool:
-    """
-    Carga GeoDataFrame a PostGIS reemplazando tabla existente.
-
-    Args:
-        gdf: GeoDataFrame a cargar.
-
-    Returns:
-        True si la carga fue exitosa, False en caso contrario.
-    """
+def loadToPostgis(gdf: gpd.GeoDataFrame) -> bool:
     try:
         with get_db_connection() as engine:
             gdf.to_postgis(
-                name=TABLA_POSTGIS,
+                name=POSTGIS_TABLE,
                 con=engine,
                 if_exists='replace',
                 schema='public'
             )
 
-        st.success(f"✅ Tabla '{TABLA_POSTGIS}' actualizada en PostGIS")
+        st.success(f"✅ Tabla '{POSTGIS_TABLE}' actualizada en PostGIS")
         st.balloons()
-        logger.info(f"Tabla {TABLA_POSTGIS} cargada exitosamente")
+        logger.info(f"Tabla {POSTGIS_TABLE} cargada exitosamente")
         return True
 
     except SQLAlchemyError as e:
@@ -154,26 +153,26 @@ def cargar_a_postgis(gdf: gpd.GeoDataFrame) -> bool:
 
 
 @st.cache_data(show_spinner=False)
-def obtener_datos_filtrados(fclass_filtro: Optional[str] = None) -> gpd.GeoDataFrame:
+def getFilteredData(fclass_filter: Optional[str] = None) -> gpd.GeoDataFrame:
 
     try:
         with get_db_connection() as engine:
             # Construir consulta SQL con transformación a WGS84
             base_query = (
                 f"SELECT fclass, name, superficie_ha, "
-                f"ST_Transform(geometry, {SRID_MAPA}) AS geometry "
-                f"FROM {TABLA_POSTGIS}"
+                f"ST_Transform(geometry, {SRID_MAP}) AS geometry "
+                f"FROM {POSTGIS_TABLE}"
             )
 
-            if fclass_filtro and fclass_filtro != 'Todos':
-                filter = 'forest' if fclass_filtro == 'Bosques' else 'nature_reserve'
+            if fclass_filter and fclass_filter != 'Todos':
+                filter = 'forest' if fclass_filter == 'Bosques' else 'nature_reserve'
                 # Usar parámetros para evitar SQL injection
                 query = f"{base_query} WHERE fclass = %(fclass)s"
                 gdf = gpd.read_postgis(
                     query,
                     con=engine,
                     geom_col='geometry',
-                    crs=SRID_MAPA,
+                    crs=SRID_MAP,
                     params={'fclass': filter}
                 )
             else:
@@ -181,11 +180,11 @@ def obtener_datos_filtrados(fclass_filtro: Optional[str] = None) -> gpd.GeoDataF
                     base_query,
                     con=engine,
                     geom_col='geometry',
-                    crs=SRID_MAPA
+                    crs=SRID_MAP
                 )
 
             logger.info(f"Datos recuperados: {len(gdf)} registros "
-                        f"(filtro: {fclass_filtro})")
+                        f"(filtro: {fclass_filter})")
             return gdf
 
     except SQLAlchemyError as e:
@@ -202,19 +201,7 @@ def obtener_datos_filtrados(fclass_filtro: Optional[str] = None) -> gpd.GeoDataF
 # FUNCIONES DE VISUALIZACIÓN
 # ============================================================================
 
-def crear_estilo_geometria(feature: Dict[str, Any]) -> Dict[str, Any]:
-    fclass = feature.get('properties', {}).get('fclass', '')
-
-    return {
-        'fillColor': COLOR_MAP.get(fclass, DEFAULT_COLOR),
-        'color': 'black',
-        'weight': 0.5,
-        'fillOpacity': 0.7
-    }
-
-
-def visualizar_mapa(gdf):
-    """Crea un mapa interactivo con Folium, centrado en Andalucía y con colores específicos."""
+def viewMap(gdf):
     if gdf.empty:
         st.warning("No hay datos para mostrar en el mapa.")
         return
@@ -258,7 +245,7 @@ def visualizar_mapa(gdf):
 # INTERFAZ DE USUARIO
 # ============================================================================
 
-def configurar_sidebar() -> str:
+def configureSidebar() -> str:
     with st.sidebar:
         st.header("📊 Panel de Control")
 
@@ -269,9 +256,9 @@ def configurar_sidebar() -> str:
         with col1:
             if st.button("🔄 Cargar", key="cargar_datos_btn",
                          help="Cargar datos desde archivo SHP"):
-                gdf_andalucia = cargar_y_preparar_datos()
+                gdf_andalucia = loadData()
                 if gdf_andalucia is not None:
-                    cargar_a_postgis(gdf_andalucia)
+                    loadToPostgis(gdf_andalucia)
                     # Limpiar caché para forzar recarga
                     st.cache_data.clear()
 
@@ -286,19 +273,19 @@ def configurar_sidebar() -> str:
         # Sección de filtros
         st.subheader("🔍 Filtros de Visualización")
 
-        filtro_opciones = ['Todos'] + ZONAS_VERDES
-        filtro_seleccionado = st.selectbox(
+        optionFilters = ['Todos'] + GREEN_ZONES
+        selectedFilters = st.selectbox(
             "Tipo de uso de suelo:",
-            filtro_opciones,
+            optionFilters,
             help="Seleccione el tipo de terreno a visualizar"
         )
 
         if st.button("🗺️ Visualizar", key="visualizar_datos_btn",
                      type="primary", use_container_width=True):
-            st.session_state.data_to_display = obtener_datos_filtrados(
-                filtro_seleccionado if filtro_seleccionado != 'Todos' else None
+            st.session_state.data_to_display = getFilteredData(
+                selectedFilters if selectedFilters != 'Todos' else None
             )
-            st.session_state.current_filter = filtro_seleccionado
+            st.session_state.current_filter = selectedFilters
 
         st.markdown("---")
 
@@ -306,13 +293,13 @@ def configurar_sidebar() -> str:
         st.subheader("ℹ️ Información")
         st.info(
             f"**Base de datos:** {DB_CONFIG['name']}\n\n"
-            f"**Tabla:** {TABLA_POSTGIS}\n\n"
+            f"**Tabla:** {POSTGIS_TABLE}\n\n"
             f"**Host:** {DB_CONFIG['host']}:{DB_CONFIG['port']}"
         )
 
-        return filtro_seleccionado
+        return selectedFilters
 
-def mostrar_contenido_principal() -> None:
+def showMainContent() -> None:
     # Inicializar estado si es necesario
     if 'data_to_display' not in st.session_state:
         st.session_state.data_to_display = gpd.GeoDataFrame()
@@ -320,37 +307,37 @@ def mostrar_contenido_principal() -> None:
     if 'current_filter' not in st.session_state:
         st.session_state.current_filter = 'Todos'
 
-    gdf_mostrar = st.session_state.data_to_display
-    print(gdf_mostrar);
+    gdf_show = st.session_state.data_to_display
+    print(gdf_show);
 
-    if not gdf_mostrar.empty:
+    if not gdf_show.empty:
         # Mostrar métricas
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            superficie_total = gdf_mostrar['superficie_ha'].sum()
+            total_shallow = gdf_show['superficie_ha'].sum()
             st.metric(
                 label="📐 Superficie Total",
-                value=f"{superficie_total:,.1f} ha"
+                value=f"{total_shallow:,.1f} ha"
             )
 
         with col2:
-            num_parcelas = len(gdf_mostrar)
+            parcel_number = len(gdf_show)
             st.metric(
                 label="📍 Número de Parcelas",
-                value=f"{num_parcelas:,}"
+                value=f"{parcel_number:,}"
             )
 
         with col3:
-            superficie_media = gdf_mostrar['superficie_ha'].mean()
+            average_shallow = gdf_show['superficie_ha'].mean()
             st.metric(
                 label="📊 Superficie Media",
-                value=f"{superficie_media:.1f} ha"
+                value=f"{average_shallow:.1f} ha"
             )
 
         # Mostrar mapa
         st.subheader(f"🗺️ Mapa de Usos de Suelo: {st.session_state.current_filter}")
-        visualizar_mapa(gdf_mostrar)
+        viewMap(gdf_show)
 
     else:
         # Mostrar mensaje de bienvenida
@@ -384,10 +371,10 @@ def main() -> None:
     )
 
     # Configurar sidebar
-    configurar_sidebar()
+    configureSidebar()
 
     # Mostrar contenido principal
-    mostrar_contenido_principal()
+    showMainContent()
 
 if __name__ == '__main__':
     main()
