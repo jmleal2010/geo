@@ -2,7 +2,6 @@
 
 Este proyecto es una aplicación web interactiva para cargar, consultar y visualizar datos geoespaciales sobre los usos del suelo en Andalucía. La aplicación está construida con Streamlit y utiliza PostGIS como base de datos espacial para un manejo eficiente de los datos.
 
-![Screenshot de la aplicación](https://i.imgur.com/example.png) <!-- Reemplazar con una captura de pantalla real de la aplicación -->
 
 ## Características
 
