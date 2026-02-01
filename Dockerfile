@@ -20,7 +20,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar la aplicación
-COPY data /app/data
 COPY app.py .
 
 # Exponer el puerto de Streamlit (por defecto es 8501)
